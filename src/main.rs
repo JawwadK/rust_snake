@@ -29,6 +29,7 @@ struct GameState {
     game_over: bool,
     movement_cooldown: f32,
     last_update: f32,
+    score: u32,
 }
 
 impl GameState {
@@ -55,6 +56,7 @@ impl GameState {
             game_over: false,
             movement_cooldown: 0.15, // Adjust this to control game speed
             last_update: 0.0,
+            score: 0,
         }
     }
 
@@ -117,6 +119,7 @@ impl GameState {
         if new_head.x == self.food.x && new_head.y == self.food.y {
             // Generate new food
             self.food = GameState::generate_food_position();
+            self.score += 10;
         } else {
             // Remove tail if no food was eaten
             self.snake.pop();
@@ -189,7 +192,14 @@ impl EventHandler for GameState {
                 }),
             );
         }
-
+        // Update Score Display
+        let score_text = graphics::Text::new(format!("Score: {}", self.score));
+        canvas.draw(
+            &score_text,
+            graphics::DrawParam::default()
+                .dest(Point2 { x: 10.0, y: 10.0 })
+                .color(graphics::Color::WHITE),
+        );
         canvas.finish(ctx)?;
         Ok(())
     }
