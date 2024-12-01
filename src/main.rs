@@ -1,3 +1,4 @@
+use ggez::audio::{self, SoundSource};
 use ggez::event::{self, EventHandler};
 use ggez::input::keyboard::{KeyCode, KeyInput};
 use ggez::mint::Point2;
@@ -30,12 +31,14 @@ struct GameState {
     movement_cooldown: f32,
     last_update: f32,
     score: u32,
+    // Sound effects
+    eat_sound: audio::Source,
+    game_over_sound: audio::Source,
 }
 
 impl GameState {
-    pub fn new() -> Self {
+    pub fn new(ctx: &mut Context) -> GameResult<Self> {
         let mut snake = Vec::new();
-        // Start with a snake of length 3
         snake.push(Position {
             x: GRID_SIZE / 2,
             y: GRID_SIZE / 2,
@@ -49,15 +52,21 @@ impl GameState {
             y: GRID_SIZE / 2,
         });
 
-        GameState {
+        // Load sound effects
+        let eat_sound = audio::Source::new(ctx, "/eat.wav")?;
+        let game_over_sound = audio::Source::new(ctx, "/game_over.wav")?;
+
+        Ok(GameState {
             snake,
             direction: Direction::Right,
             food: GameState::generate_food_position(),
             game_over: false,
-            movement_cooldown: 0.15, // Adjust this to control game speed
+            movement_cooldown: 0.15,
             last_update: 0.0,
             score: 0,
-        }
+            eat_sound,
+            game_over_sound,
+        })
     }
 
     fn generate_food_position() -> Position {
@@ -69,16 +78,15 @@ impl GameState {
     }
 
     fn check_collision(&self, pos: &Position) -> bool {
-        // Check if snake hits itself
         self.snake
             .iter()
             .skip(1)
             .any(|p| p.x == pos.x && p.y == pos.y)
     }
 
-    fn update_snake(&mut self) {
+    fn update_snake(&mut self, ctx: &mut Context) -> GameResult {
         if self.game_over {
-            return;
+            return Ok(());
         }
 
         let head = self.snake.first().unwrap().clone();
@@ -104,26 +112,29 @@ impl GameState {
         // Check wall collision
         if new_head.x < 0 || new_head.x >= GRID_SIZE || new_head.y < 0 || new_head.y >= GRID_SIZE {
             self.game_over = true;
-            return;
+            self.game_over_sound.play_detached(ctx)?;
+            return Ok(());
         }
 
         // Check self collision
         if self.check_collision(&new_head) {
             self.game_over = true;
-            return;
+            self.game_over_sound.play_detached(ctx)?;
+            return Ok(());
         }
 
         self.snake.insert(0, new_head);
 
         // Check if snake ate food
         if new_head.x == self.food.x && new_head.y == self.food.y {
-            // Generate new food
             self.food = GameState::generate_food_position();
             self.score += 10;
+            self.eat_sound.play_detached(ctx)?;
         } else {
-            // Remove tail if no food was eaten
             self.snake.pop();
         }
+
+        Ok(())
     }
 }
 
@@ -132,7 +143,7 @@ impl EventHandler for GameState {
         let current_time = ctx.time.time_since_start().as_secs_f32();
 
         if current_time - self.last_update >= self.movement_cooldown {
-            self.update_snake();
+            self.update_snake(ctx)?;
             self.last_update = current_time;
         }
 
@@ -180,10 +191,6 @@ impl EventHandler for GameState {
 
         if self.game_over {
             let text = graphics::Text::new("Game Over!");
-            let dest = Point2 {
-                x: (SCREEN_SIZE as f32 / 2.0) - 40.0,
-                y: (SCREEN_SIZE as f32 / 2.0) - 10.0,
-            };
             canvas.draw(
                 &text,
                 graphics::DrawParam::default().dest(Point2 {
@@ -192,6 +199,7 @@ impl EventHandler for GameState {
                 }),
             );
         }
+
         // Update Score Display
         let score_text = graphics::Text::new(format!("Score: {}", self.score));
         canvas.draw(
@@ -231,14 +239,17 @@ impl EventHandler for GameState {
 }
 
 fn main() -> GameResult {
+    let resource_dir = std::path::PathBuf::from("./resources");
     let window_setup = ggez::conf::WindowSetup::default().title("Snake Game");
-    let window_mode =
-        ggez::conf::WindowMode::default().dimensions(SCREEN_SIZE as f32, SCREEN_SIZE as f32);
-    let (ctx, event_loop) = ggez::ContextBuilder::new("snake", "author")
+    let window_mode = ggez::conf::WindowMode::default()
+        .dimensions(SCREEN_SIZE as f32, SCREEN_SIZE as f32);
+    
+    let (mut ctx, event_loop) = ggez::ContextBuilder::new("snake", "author")
+        .add_resource_path(resource_dir)
         .window_setup(window_setup)
         .window_mode(window_mode)
         .build()?;
 
-    let state = GameState::new();
+    let state = GameState::new(&mut ctx)?;
     event::run(ctx, event_loop, state)
 }
